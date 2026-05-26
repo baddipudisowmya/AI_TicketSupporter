@@ -8,12 +8,19 @@ its tasks.
 import logging
 import json
 from utils.hf_api_client import query_chat_model, LLM_MODEL
+from utils.pii_detector import PIIMasker
 from prompts import prompt_templates
 
 def process_support_ticket(ticket_text):
     """
     Orchestrates the full 3-call LLM workflow for analyzing and responding to a ticket.
     """
+    # === Mask any remaining PII before processing ===
+    masked_ticket_text, detected_pii = PIIMasker.mask_pii(ticket_text)
+    if detected_pii:
+        logging.warning(f"PII detected and masked in ticket: {list(detected_pii.keys())}")
+        ticket_text = masked_ticket_text
+
     # === LLM Call 1: Analyze Support Ticket ===
     logging.info("Initiating LLM Call 1: Ticket Analysis")
     analysis_prompt = prompt_templates.get_analysis_prompt(ticket_text)

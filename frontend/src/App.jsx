@@ -4,11 +4,46 @@ import './style.css';
 // The backend API endpoint. For production, you might get this from an environment variable.
 const API_ENDPOINT = 'http://127.0.0.1:5001/api/ticket';
 
+// PII Detection patterns (client-side warning)
+const PII_PATTERNS = {
+    emails: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
+    phone_numbers: /(?:\+\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g,
+    ssn: /(?:\d{3}-\d{2}-\d{4}|\d{9})\b/g,
+    credit_cards: /\b(?:\d{4}[-\s]?){3}\d{4}\b/g,
+    account_ids: /\b(?:ACC|ACCT|ACCOUNT|CUST|CUSTOMER)[-\s]?[\dA-Z]{6,}\b/gi,
+    ip_addresses: /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g,
+};
+
+const detectPII = (text) => {
+    const detected = {};
+    for (const [type, pattern] of Object.entries(PII_PATTERNS)) {
+        const matches = text.match(pattern);
+        if (matches && matches.length > 0) {
+            detected[type] = matches.slice(0, 2); // Store first 2 matches for display
+        }
+    }
+    return detected;
+};
+
+const PIIWarning = ({ detected }) => (
+    <div className="pii-warning" style={{ marginTop: '12px', padding: '12px', backgroundColor: '#fff3cd', borderRadius: '4px', fontSize: '12px' }}>
+        <strong>Detected Personal Information:</strong>
+        <ul style={{ marginTop: '8px', marginBottom: '0' }}>
+            {Object.entries(detected).map(([type, values]) => (
+                <li key={type}>
+                    <strong>{type}:</strong> {values.slice(0, 2).join(', ')}
+                </li>
+            ))}
+        </ul>
+    </div>
+);
+
 const App = () => {
     const [ticketText, setTicketText] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [results, setResults] = useState(null);
     const [error, setError] = useState('');
+    const [piiWarning, setPiiWarning] = useState(null);
 
     const handleSubmit = async (event) => {
         event.preventDefault();
@@ -21,6 +56,22 @@ const App = () => {
         setIsLoading(true);
         setResults(null);
         setError('');
+        setPiiWarning(null);
+
+        // Check for PII before submission
+        const detectedPII = detectPII(ticketText);
+        if (Object.keys(detectedPII).length > 0) {
+            setIsLoading(false);
+            setPiiWarning({
+                detected: detectedPII,
+                types: Object.keys(detectedPII),
+            });
+            setError(
+                `⚠️ Security Warning: Your ticket contains ${Object.keys(detectedPII).join(', ')}. ` +
+                `Please remove personal information before submitting. This data should never be included in support tickets.`
+            );
+            return;
+        }
 
         try {
             const response = await fetch(API_ENDPOINT, {
@@ -32,8 +83,17 @@ const App = () => {
             const data = await response.json();
 
             if (!response.ok) {
-                // Handle errors from the backend, including API failures
-                throw new Error(data.error || `Server responded with status: ${response.status}`);
+                if (data.warning) {
+                    // Backend detected PII (second layer of protection)
+                    setPiiWarning({
+                        detected: data.examples || {},
+                        types: data.detected_pii_types || [],
+                    });
+                    setError(`⚠️ ${data.message}`);
+                } else {
+                    throw new Error(data.error || `Server responded with status: ${response.status}`);
+                }
+                return;
             }
 
             setResults(data);
@@ -68,7 +128,14 @@ const App = () => {
             </form>
 
             {isLoading && <div className="loader">Analyzing ticket... This may take a moment.</div>}
-            {error && <div className="error">{error}</div>}
+            {error && (
+                <div className="error">
+                    {error}
+                    {piiWarning && piiWarning.types.length > 0 && (
+                        <PIIWarning detected={piiWarning.detected} />
+                    )}
+                </div>
+            )}
             {results && <ResultsDisplay data={results} />}
         </div>
     );

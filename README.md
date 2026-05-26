@@ -63,6 +63,8 @@ pip install -r requirements.txt
 # 4. Create the environment file
 # Create a file named .env in the 'backend' directory and add your Hugging Face token:
 HF_API_TOKEN="hf_YourHuggingFaceApiTokenHere"
+
+> **⚠️ Security Warning:** Never commit your actual Hugging Face token or any other secrets to version control (like Git). The `.env` file is used to keep secrets private on your local machine and should be listed in your `.gitignore` file to prevent accidental exposure. The value above is a placeholder.
 ```
 
 ### 2. Frontend Setup
